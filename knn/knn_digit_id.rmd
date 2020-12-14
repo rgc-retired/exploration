@@ -1,0 +1,161 @@
+---
+title: "Digit Identification"
+author: "R. G. Cronce"
+date: "July 17, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Overview
+
+Example of handwritten digit recognition via KNN.  Taken from the following source:
+
+[Website](https://www.r-bloggers.com/teach-r-to-read-handwritten-digits-with-just-4-lines-of-code/)
+
+This is KNN from first principles.
+
+The data was taken from:
+
+[Data Source](https://archive.ics.uci.edu/ml/datasets/Semeion+Handwritten+Digit)
+
+The data may already exist in one of the R packages or sklearn but was downloaded from this source to match the article.
+
+
+## Preliminary Investigation
+
+Read in the data and plot some random digits to get a feel for the data.  Not sure about the format of the data in the file versus the format required for displaying images but the data is read in row major format, flipped up-down, and then transposed for display purposes.  For classification purposes this does not matter, but the precise orientation is important for visualization.
+
+```{r}
+# helper function for plotting images of digits in a nice way + returning the respective number
+plot_digit <- function(digit) {
+  M <- matrix(as.numeric(digit[1:256]), nrow = 16, ncol = 16, byrow = TRUE)
+  image(t(M[nrow(M):1, ]), col = c(0,1), xaxt = "n", yaxt = "n", useRaster = TRUE)
+  digit[257]
+}
+ 
+# load data and chose some digits as examples
+semeion <- read.table("./semeion.data", quote = "\"", comment.char = "") # put in right path here!
+digit_data <- semeion[ , 1:256]
+which_digit <- apply(semeion[ , 257:266], 1, function(x) which.max(x) - 1)
+semeion_new <- cbind(digit_data, which_digit)
+ 
+# chose training and test set by chance
+set.seed(123) # for reproducibility
+data <- semeion_new
+random <- sample(1:nrow(data), 0.8 * nrow(data)) # 80%: training data, 20%: test data
+train <- data[random, ]
+test <- data[-random, ]
+ 
+# plot example digits
+old_par <- par(mfrow = c(4, 6), oma = c(5, 4, 0, 0) + 0.1, mar = c(0, 0, 1, 1) + 0.1)
+matrix(apply(train[1:24, ], 1, plot_digit), 4, 6, byrow = TRUE)
+par(old_par)
+```
+
+## KNN from first principles
+
+Establish a few support routines and then try some training/test conditions.
+
+Metric is the Euclidean distance (dist_eucl) between the data and training set.
+
+```{r}
+dist_eucl <- function(x1, x2) {
+  sqrt(sum((x1 - x2) ^ 2)) # Pythagorean theorem!
+}
+```
+
+Need to find the K nearest neighbors and then use a majority rules (mode) to assign the digit.
+
+The author claims this is done in four lines of code.  While technically true the nesting of the function calls makes this very difficult to read!
+
+First - the mode.  This is done by taking a vector of values (NNs) and creating a table.  The sort function arranges the values in the table from low to high so using the negative of the table sorts from high to low.  The names function extracts the actual values from NNs (as a string).
+
+Second - the distance.  This is done by calculating the Euclidean distance between each row in the training data against the test data.  The mode of the most common match for nearest k neighbors is returned as the value of knn.
+
+```{r}
+mode <- function(NNs) {
+  names(sort(-table(NNs[ncol(NNs)])))[1] # mode = majority vote
+}
+knn <- function(train, test, k = 5) {
+  dist_sort <- order(apply(train[-ncol(train)], 1, function(x) dist_eucl(as.numeric(x), x2 = as.numeric(test[-ncol(test)]))))
+  mode(train[dist_sort[1:k], ])
+}
+```
+
+Try a few examples:
+
+```{r}
+# show a few examples
+set.seed(123) # for reproducibility
+no_examples <- 24
+examples <- sample(dim(test)[1], no_examples)
+old_par <- par(mfrow = c(4, 6), oma = c(5, 4, 0, 0) + 0.1, mar = c(0, 0, 1, 1) + 0.1)
+matrix(apply(test[examples, ], 1, plot_digit), 4, 6, byrow = TRUE)
+par(old_par)
+```
+
+Run it on the small set of examples to show it sort of works.  Each time through the loop there is one new prediction generated.  In this limited set of examples the prediction match the actual data.
+
+```{r}
+prediction <- integer(no_examples)
+for (i in 1:no_examples) {
+  prediction[i] <- knn(train, test[examples[i], ], k = 9)
+}
+print(matrix(prediction, 4, 6, byrow = TRUE), quote = FALSE, right = TRUE)
+```
+
+Now run it on the full set of test data and determine the performance.  Run time is ~20 seconds.
+
+
+```{r}
+prediction <- integer(nrow(test))
+ 
+ptm <- proc.time()
+for (i in 1:nrow(test)) {
+  prediction[i] <- knn(train, test[i, ], k = 9)
+}
+proc.time() - ptm
+```
+
+Determine the accuracy
+
+I don't have the OneR package installed so there is no confusion matrix but I can quickly assess the accuracy of the method and calculate a manual confusion matrix.
+
+```{r}
+paste0('Accuracy = ',sum(test[,ncol(test)]==prediction)/nrow(test))
+```
+
+We can make a quick and dirty contingency table (confusion matrix) as follows:
+
+```{r}
+t=addmargins(table(predict=prediction,actual=test[,ncol(test)]))
+print(t,zero.print=".")
+```
+
+
+
+
+
+Check out the "errors" to see if they are humanly legible.
+
+```{r}
+# show misclassified digits
+err <- which(as.integer(prediction) != unlist(test[ncol(test)]))
+old_par <- par(mfrow = c(3, 6), oma = c(5, 4, 0, 0) + 0.1, mar = c(0, 0, 1, 1) + 0.1)
+matrix(apply(test[err, ], 1, plot_digit), 3, 6, byrow = TRUE)
+par(old_par)
+```
+
+There is no obvious pattern to the errors.  There are no digits that are systematically misidentified as some other digit.
+
+```{r}
+print(addmargins(table(predict=prediction[err],actual=test[err,257])),zero.print=".")
+```
+
+## Next steps
+
+Try to improve on the accuracy - but I'm not sure how easy that will be.  I could adjust the cluster size (e.g. K) to see if that improves things.  I could also try some other ensemble methods to improve on the classification performance.  I should also compare this to the tutorial for sklearn and see how that stacks up.
+

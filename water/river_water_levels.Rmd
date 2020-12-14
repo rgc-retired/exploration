@@ -1,0 +1,91 @@
+---
+title: "Water Levels"
+author: "R. G. Cronce"
+date: "July 24, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Water Levels from USGS
+
+The original Web article was about a location in PA that showed data for rainfall, water flow, and many other variables at a resolution of 30 minutes.  The story was on Rbloggers with the link to the original article given as:  [Original Web Article](https://rclimate.wordpress.com/2019/07/19/analysis-of-a-flash-flood/)
+
+This article contains a [Link to the Data](https://waterdata.usgs.gov/nwis/uv?site_no=01474500) that gives a number of different measurements including temperature, precipitation, water flow rates, and water gage height.  This is interesting since it allows you to visualize/model the relationship between precipitation and flooding.
+
+Trying to get a little closer to home I looked at the Waukesha Fox river measurements.  All that is available here is water flow.
+
+Not sure what I can do with this but the data link is shown below for the US Geological Survey.  They have *continuous* data on many locations starting in 1963 to the present.  The particular link below points was Waukesha but you can navigate up and find a map to select other sites.  The particular data available is site-specific.  I wanted to look at precipitation and see how it relates to flow rates but I can't do that using just this data for the Fox river:
+
+[Website for USGS Water Data - Fox River](https://waterdata.usgs.gov/nwis/inventory?agency_code=USGS&site_no=05543830)
+
+There is a link on the USGS page to provide more information about flooding where the gage level is shown.  I haven't investigated this data in detail, yet:
+
+[NWS Flood Data](https://water.weather.gov/ahps2/hydrograph.php?wfo=mkx&gage=wkew3&view=1,1,1,1,1,1)
+
+A brief look shows that gage height and flow rates at 15 minute intervals for the past 10 days.  I could not find any older data.  There are a large number of links from this page that might have more data.  It might also be interesting to look at geographically adjacent areas and try to plot the levels versus time as a 3D surface map (e.g. see the surface flow of water during a storm).
+
+This is all in the very early stages of investigation.
+
+```{r}
+d=read.delim("all_data.txt",comment.char="#")
+head(d)
+```
+
+Clean up the data.  The first row of the file is some sort of format specification that we will ignore.  The columns are names based on some codes from USGS.
+
+
+```{r}
+d2=d[-1,]
+cc=names(d2)
+cc[4]="Flow"
+cc[5]="Status"
+names(d2)<-cc
+d2[d2$Flow=="Ice",]<-NA
+d2$Flow<-as.numeric(as.character(d2$Flow))
+d2$datetime<-as.Date(as.character(d2$datetime))
+head(d2)
+```
+
+```{r}
+plot(d2$datetime,d2$Flow)
+```
+
+It is difficult to make too many conclusions from this data.  It seems like the flow rate may be increasing over time but it is uncertain.
+
+Looking at the mean flow rate per year might be more revealing.
+
+
+```{r}
+d2$y=format(d2$datetime,"%Y")
+head(d2)
+```
+
+```{r}
+d3=aggregate(Flow~y,d2,mean)
+head(d3)
+d3$y=as.numeric(d3$y)
+m=lm(Flow~y,d3)
+summary(m)
+confint(m)
+zzz=predict(m,d3,interval="confidence")
+d3=cbind(d3,zzz)
+plot(d3$y,d3$Flow,type='b',
+     xlab="Year",
+     ylab="Mean Flow",
+     ylim=range(d3[,-1]))
+grid()
+lines(d3$y,d3$fit,col="red",lwd=3)
+lines(d3$y,d3$lwr,col="red",lwd=1)
+lines(d3$y,d3$upr,col="red",lwd=1)
+title(main="Mean Flow versus calendar Year",
+      sub="Linear regression and 95% regression confidence")
+
+```
+
+From this it appears that flow rate is increasing over time.
+
+Why?
+
